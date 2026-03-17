@@ -48,6 +48,27 @@ def build_model(model_type: str, vocab_size: int, num_classes: int) -> nn.Module
             reconfiguration_interval=4,
             novelty_threshold=0.6,
         )
+    if model_type == "cfrm_philosophy_balanced":
+        return CFRMPhilosophyClassifier(
+            vocab_size=vocab_size,
+            num_classes=num_classes,
+            num_clouds=6,
+            sparse_reconfiguration=True,
+            reconfiguration_interval=2,
+            novelty_threshold=0.5,
+            always_apply_attractor=True,
+        )
+    if model_type == "cfrm_philosophy_topk":
+        return CFRMPhilosophyClassifier(
+            vocab_size=vocab_size,
+            num_classes=num_classes,
+            num_clouds=6,
+            sparse_reconfiguration=True,
+            reconfiguration_interval=2,
+            novelty_threshold=0.5,
+            always_apply_attractor=True,
+            interaction_topk=2,
+        )
     raise ValueError(f"Unsupported model_type: {model_type}")
 
 

@@ -14,6 +14,8 @@ class CFRMPhilosophyClassifier(nn.Module):
         sparse_reconfiguration: bool = False,
         reconfiguration_interval: int = 1,
         novelty_threshold: float = 0.0,
+        always_apply_attractor: bool = False,
+        interaction_topk: int | None = None,
     ) -> None:
         super().__init__()
         self.num_clouds = num_clouds
@@ -22,6 +24,8 @@ class CFRMPhilosophyClassifier(nn.Module):
         self.sparse_reconfiguration = sparse_reconfiguration
         self.reconfiguration_interval = max(1, reconfiguration_interval)
         self.novelty_threshold = novelty_threshold
+        self.always_apply_attractor = always_apply_attractor
+        self.interaction_topk = interaction_topk
 
         self.embedding = nn.Embedding(vocab_size, hidden_dim, padding_idx=pad_idx)
         self.token_norm = nn.LayerNorm(hidden_dim)
@@ -66,6 +70,10 @@ class CFRMPhilosophyClassifier(nn.Module):
         d2 = torch.cdist(centers, centers, p=2).pow(2)
         scale = spreads.unsqueeze(1) + spreads.unsqueeze(2) + 1e-4
         compat = -d2 / scale + masses.unsqueeze(1)
+        if self.interaction_topk is not None and self.interaction_topk < compat.size(-1):
+            topk_values, topk_indices = torch.topk(compat, k=self.interaction_topk, dim=-1)
+            masked = torch.full_like(compat, float("-inf"))
+            compat = masked.scatter(-1, topk_indices, topk_values)
         mixing = torch.softmax(compat, dim=-1)
 
         mixed_centers = torch.matmul(mixing, centers)
@@ -84,6 +92,7 @@ class CFRMPhilosophyClassifier(nn.Module):
         masses = torch.zeros(batch_size, self.num_clouds, device=device)
         novelty_history = []
         reconfiguration_mask = []
+        attractor_mask = []
 
         for t in range(seq_len):
             valid = mask[:, t : t + 1]
@@ -121,10 +130,14 @@ class CFRMPhilosophyClassifier(nn.Module):
                 should_reconfigure = interval_hit and novelty_hit
             reconfiguration_mask.append(float(should_reconfigure))
 
-            if should_reconfigure:
+            should_apply_attractor = should_reconfigure or self.always_apply_attractor
+            attractor_mask.append(float(should_apply_attractor))
+
+            if should_apply_attractor:
                 attractor = self.attractor_proj(ctrl).unsqueeze(1)
                 centers = centers + 0.10 * novelty.unsqueeze(-1) * (attractor - centers)
 
+            if should_reconfigure:
                 mixed_centers, mixed_spreads, mixed_masses = self.cloud_interaction(
                     centers, spreads, masses
                 )
@@ -165,4 +178,6 @@ class CFRMPhilosophyClassifier(nn.Module):
             "novelty": torch.stack(novelty_history, dim=1),
             "reconfiguration_count": int(sum(reconfiguration_mask)),
             "reconfiguration_mask": reconfiguration_mask,
+            "attractor_count": int(sum(attractor_mask)),
+            "attractor_mask": attractor_mask,
         }

@@ -70,3 +70,24 @@ def test_cfrm_philosophy_sparse_schedule_reports_fewer_reconfigurations():
 
     assert sparse_output["logits"].shape == (2, 3)
     assert sparse_output["reconfiguration_count"] <= dense_output["reconfiguration_count"]
+
+
+def test_cfrm_philosophy_topk_schedule_tracks_attractor_and_masks():
+    model = CFRMPhilosophyClassifier(
+        vocab_size=100,
+        num_classes=3,
+        num_clouds=4,
+        sparse_reconfiguration=True,
+        reconfiguration_interval=3,
+        novelty_threshold=0.5,
+        always_apply_attractor=True,
+        interaction_topk=2,
+    )
+    tokens = torch.randint(0, 100, (2, 12))
+
+    output = model(tokens, return_state=True)
+
+    assert output["logits"].shape == (2, 3)
+    assert len(output["reconfiguration_mask"]) == 12
+    assert len(output["attractor_mask"]) == 12
+    assert output["attractor_count"] >= output["reconfiguration_count"]
