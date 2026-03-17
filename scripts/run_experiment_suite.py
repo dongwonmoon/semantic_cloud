@@ -8,7 +8,7 @@ from semantic_cloud.training.experiment_runner import run_experiment_suite
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-type", choices=("transformer", "cfrm", "cfrm_philosophy"), required=True)
+    parser.add_argument("--model-type", choices=("transformer", "gru", "cfrm", "cfrm_philosophy"), required=True)
     parser.add_argument("--dataset-dir", required=True)
     parser.add_argument("--seeds", type=int, nargs="+", required=True)
     parser.add_argument("--epochs", type=int, default=1)
