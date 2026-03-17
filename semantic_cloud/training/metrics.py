@@ -41,3 +41,26 @@ def summarize_subset(
         "accuracy": compute_accuracy(subset_preds, subset_labels),
         "macro_f1": compute_macro_f1(subset_preds, subset_labels, num_classes=num_classes),
     }
+
+
+def summarize_by_metadata_field(
+    preds: list[int],
+    labels: list[int],
+    metadata: list[dict[str, object]],
+    field: str,
+    num_classes: int,
+) -> dict[str, dict[str, float]]:
+    grouped: dict[str, list[tuple[int, int]]] = {}
+    for pred, label, row in zip(preds, labels, metadata):
+        key = str(row.get(field, "unknown"))
+        grouped.setdefault(key, []).append((pred, label))
+
+    summary: dict[str, dict[str, float]] = {}
+    for key, pairs in grouped.items():
+        group_preds = [pred for pred, _ in pairs]
+        group_labels = [label for _, label in pairs]
+        summary[key] = {
+            "accuracy": compute_accuracy(group_preds, group_labels),
+            "macro_f1": compute_macro_f1(group_preds, group_labels, num_classes=num_classes),
+        }
+    return summary

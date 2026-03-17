@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from semantic_cloud.data.build_dataset import build_dataset_source, build_splits, export_splits
+from semantic_cloud.data.challenge_sets import load_challenge_rows
 from semantic_cloud.models.cfrm_classifier import CFRMClassifier
 from semantic_cloud.models.cfrm_philosophy import CFRMPhilosophyClassifier
 from semantic_cloud.models.transformer_baseline import TinyTransformerClassifier
@@ -20,7 +21,12 @@ from semantic_cloud.training.datasets import (
     load_dataset_metadata,
     load_jsonl_rows,
 )
-from semantic_cloud.training.metrics import compute_accuracy, compute_macro_f1, summarize_subset
+from semantic_cloud.training.metrics import (
+    compute_accuracy,
+    compute_macro_f1,
+    summarize_by_metadata_field,
+    summarize_subset,
+)
 
 
 def build_model(model_type: str, vocab_size: int, num_classes: int) -> nn.Module:
@@ -112,6 +118,95 @@ def dump_validation_state(
     path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
 
 
+def write_state_summary(
+    model: nn.Module,
+    dataset: ExperimentDataset,
+    device: str,
+    output_path: str,
+    sample_count: int = 8,
+) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    novelty_values: list[float] = []
+    entropy_values: list[float] = []
+    alpha_max_values: list[float] = []
+    uncertainty_values: list[float] = []
+    diversity_values: list[float] = []
+
+    limit = min(sample_count, len(dataset))
+    for index in range(limit):
+        item = dataset[index]
+        tokens = item["tokens"].unsqueeze(0).to(device)
+        metadata = item["metadata"]
+        try:
+            output = model(tokens, return_state=True)
+        except TypeError:
+            output = {"logits": model(tokens)}
+
+        summary_row = {
+            "text": metadata["text"],
+            "label": metadata["label"],
+            "predicted_label_id": int(output["logits"].argmax(dim=-1).item()),
+        }
+        if "novelty" in output:
+            novelty_tensor = output["novelty"].detach().cpu()
+            novelty_values.extend(float(value) for value in novelty_tensor.reshape(-1).tolist())
+            summary_row["novelty_peak"] = float(novelty_tensor.max().item())
+        if "entropy" in output:
+            entropy_value = float(output["entropy"].detach().cpu().reshape(-1)[-1].item())
+            entropy_values.append(entropy_value)
+            summary_row["entropy_final"] = entropy_value
+        if "alpha" in output:
+            alpha_value = float(output["alpha"].detach().cpu().max().item())
+            alpha_max_values.append(alpha_value)
+            summary_row["alpha_max_final"] = alpha_value
+        if "uncertainty" in output:
+            uncertainty_value = float(output["uncertainty"].detach().cpu().reshape(-1)[-1].item())
+            uncertainty_values.append(uncertainty_value)
+            summary_row["uncertainty_final"] = uncertainty_value
+        if "diversity" in output:
+            diversity_value = float(output["diversity"].detach().cpu().reshape(-1)[-1].item())
+            diversity_values.append(diversity_value)
+            summary_row["diversity_final"] = diversity_value
+        rows.append(summary_row)
+
+    def average(values: list[float]) -> float:
+        return sum(values) / len(values) if values else 0.0
+
+    payload = {
+        "novelty_mean": average(novelty_values),
+        "novelty_peak": max(novelty_values) if novelty_values else 0.0,
+        "entropy_final": average(entropy_values),
+        "alpha_max_final": average(alpha_max_values),
+        "uncertainty_final": average(uncertainty_values),
+        "diversity_final": average(diversity_values),
+        "representative_samples": rows,
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def evaluate_rows(
+    model: nn.Module,
+    rows: list[dict[str, object]],
+    vocab: dict[str, int],
+    label_to_id: dict[str, int],
+    batch_size: int,
+    device: str,
+    description: str,
+) -> tuple[float, list[int], list[int], list[dict[str, object]]]:
+    dataset = ExperimentDataset(rows, vocab=vocab, max_length=40, label_to_id=label_to_id)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_batch)
+    return run_epoch(
+        model,
+        loader,
+        device=device,
+        optimizer=None,
+        description=description,
+    )
+
+
 def run_experiment(
     model_type: str,
     dataset_dir: str,
@@ -120,7 +215,12 @@ def run_experiment(
     device: str = "cpu",
     report_path: str | None = None,
     state_dump_path: str | None = None,
+    evaluate_test: bool = False,
+    challenge_dir: str | None = None,
+    state_summary_path: str | None = None,
+    seed: int = 7,
 ) -> dict[str, object]:
+    torch.manual_seed(seed)
     train_rows = load_jsonl_rows(dataset_dir, "train")
     valid_rows = load_jsonl_rows(dataset_dir, "valid")
     metadata = load_dataset_metadata(dataset_dir)
@@ -190,6 +290,55 @@ def run_experiment(
             dataset=valid_dataset,
             device=resolved_device,
             output_path=state_dump_path,
+        )
+
+    if state_summary_path is not None:
+        write_state_summary(
+            model=model,
+            dataset=valid_dataset,
+            device=resolved_device,
+            output_path=state_summary_path,
+        )
+
+    if evaluate_test:
+        test_rows = load_jsonl_rows(dataset_dir, "test")
+        test_loss, test_preds, test_labels, _ = evaluate_rows(
+            model=model,
+            rows=test_rows,
+            vocab=vocab,
+            label_to_id=label_to_id,
+            batch_size=batch_size,
+            device=resolved_device,
+            description="test",
+        )
+        metrics["test_loss"] = test_loss
+        metrics["test_accuracy"] = compute_accuracy(test_preds, test_labels)
+        metrics["test_macro_f1"] = compute_macro_f1(test_preds, test_labels, num_classes=num_classes)
+
+    if challenge_dir is not None:
+        challenge_rows = load_challenge_rows(challenge_dir, allowed_labels=set(label_to_id.keys()))
+        challenge_loss, challenge_preds, challenge_labels, challenge_meta = evaluate_rows(
+            model=model,
+            rows=challenge_rows,
+            vocab=vocab,
+            label_to_id=label_to_id,
+            batch_size=batch_size,
+            device=resolved_device,
+            description="challenge",
+        )
+        metrics["challenge_loss"] = challenge_loss
+        metrics["challenge_accuracy"] = compute_accuracy(challenge_preds, challenge_labels)
+        metrics["challenge_macro_f1"] = compute_macro_f1(
+            challenge_preds,
+            challenge_labels,
+            num_classes=num_classes,
+        )
+        metrics["challenge_by_type"] = summarize_by_metadata_field(
+            challenge_preds,
+            challenge_labels,
+            challenge_meta,
+            field="challenge_type",
+            num_classes=num_classes,
         )
 
     return metrics

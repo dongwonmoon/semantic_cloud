@@ -4,4 +4,9 @@
 __pycache__/
 *.pyc
 
-artifacts/
+artifacts/*
+!artifacts/challenge_sets/
+artifacts/challenge_sets/*
+!artifacts/challenge_sets/meaning_reinterpretation_v1.jsonl
+artifacts/datasets/
+artifacts/reports/
