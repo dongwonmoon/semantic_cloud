@@ -3,41 +3,37 @@ from __future__ import annotations
 import argparse
 import json
 
-from semantic_cloud.training.train import run_experiment
+from semantic_cloud.training.experiment_runner import run_experiment_suite
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-type", choices=("transformer", "cfrm", "cfrm_philosophy"), required=True)
     parser.add_argument("--dataset-dir", required=True)
+    parser.add_argument("--seeds", type=int, nargs="+", required=True)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
-    parser.add_argument("--evaluate-test", action="store_true")
     parser.add_argument("--challenge-dir")
-    parser.add_argument("--report-path")
-    parser.add_argument("--state-dump-path")
-    parser.add_argument("--state-summary-path")
-    parser.add_argument("--seed", type=int, default=7)
-    return parser.parse_args(argv)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--write-state-summary", action="store_true")
+    return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    metrics = run_experiment(
+    result = run_experiment_suite(
         model_type=args.model_type,
         dataset_dir=args.dataset_dir,
+        seeds=args.seeds,
         batch_size=args.batch_size,
         epochs=args.epochs,
         device=args.device,
-        report_path=args.report_path,
-        state_dump_path=args.state_dump_path,
-        evaluate_test=args.evaluate_test,
+        output_dir=args.output_dir,
         challenge_dir=args.challenge_dir,
-        state_summary_path=args.state_summary_path,
-        seed=args.seed,
+        write_state_summary=args.write_state_summary,
     )
-    print(json.dumps(metrics, indent=2))
+    print(json.dumps(result["summary"], indent=2))
 
 
 if __name__ == "__main__":
