@@ -8,12 +8,13 @@ from semantic_cloud.training.train import run_experiment
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-type", choices=("transformer", "cfrm"), required=True)
+    parser.add_argument("--model-type", choices=("transformer", "cfrm", "cfrm_philosophy"), required=True)
     parser.add_argument("--dataset-dir", required=True)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     parser.add_argument("--report-path")
+    parser.add_argument("--state-dump-path")
     return parser.parse_args()
 
 
@@ -26,6 +27,7 @@ def main() -> None:
         epochs=args.epochs,
         device=args.device,
         report_path=args.report_path,
+        state_dump_path=args.state_dump_path,
     )
     print(json.dumps(metrics, indent=2))
 
