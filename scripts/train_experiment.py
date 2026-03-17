@@ -8,7 +8,11 @@ from semantic_cloud.training.train import run_experiment
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-type", choices=("transformer", "gru", "cfrm", "cfrm_philosophy"), required=True)
+    parser.add_argument(
+        "--model-type",
+        choices=("transformer", "gru", "cfrm", "cfrm_philosophy", "cfrm_philosophy_fast"),
+        required=True,
+    )
     parser.add_argument("--dataset-dir", required=True)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=8)

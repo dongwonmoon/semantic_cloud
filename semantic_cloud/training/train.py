@@ -39,6 +39,15 @@ def build_model(model_type: str, vocab_size: int, num_classes: int) -> nn.Module
         return CFRMClassifier(vocab_size=vocab_size, num_classes=num_classes, num_clouds=6)
     if model_type == "cfrm_philosophy":
         return CFRMPhilosophyClassifier(vocab_size=vocab_size, num_classes=num_classes, num_clouds=6)
+    if model_type == "cfrm_philosophy_fast":
+        return CFRMPhilosophyClassifier(
+            vocab_size=vocab_size,
+            num_classes=num_classes,
+            num_clouds=6,
+            sparse_reconfiguration=True,
+            reconfiguration_interval=4,
+            novelty_threshold=0.6,
+        )
     raise ValueError(f"Unsupported model_type: {model_type}")
 
 
