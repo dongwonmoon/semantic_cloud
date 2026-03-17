@@ -6,14 +6,17 @@ from pathlib import Path
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
-from semantic_cloud.data.build_dataset import build_splits, export_splits
+from semantic_cloud.data.build_dataset import build_dataset_source, build_splits, export_splits
 from semantic_cloud.models.cfrm_classifier import CFRMClassifier
 from semantic_cloud.models.transformer_baseline import TinyTransformerClassifier
 from semantic_cloud.training.datasets import (
     ExperimentDataset,
+    build_label_mapping,
     build_vocab_from_rows,
     collate_batch,
+    load_dataset_metadata,
     load_jsonl_rows,
 )
 from semantic_cloud.training.metrics import compute_accuracy, compute_macro_f1, summarize_subset
@@ -27,7 +30,19 @@ def build_model(model_type: str, vocab_size: int, num_classes: int) -> nn.Module
     raise ValueError(f"Unsupported model_type: {model_type}")
 
 
-def run_epoch(model: nn.Module, dataloader: DataLoader, optimizer=None) -> tuple[float, list[int], list[int], list[dict[str, object]]]:
+def resolve_device(device: str) -> str:
+    if device == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    return device
+
+
+def run_epoch(
+    model: nn.Module,
+    dataloader: DataLoader,
+    device: str,
+    optimizer=None,
+    description: str = "epoch",
+) -> tuple[float, list[int], list[int], list[dict[str, object]]]:
     loss_fn = nn.CrossEntropyLoss()
     is_training = optimizer is not None
     model.train(is_training)
@@ -37,9 +52,10 @@ def run_epoch(model: nn.Module, dataloader: DataLoader, optimizer=None) -> tuple
     labels: list[int] = []
     metadata: list[dict[str, object]] = []
 
-    for batch in dataloader:
-        tokens = batch["tokens"]
-        batch_labels = batch["labels"]
+    iterator = tqdm(dataloader, desc=description, leave=False)
+    for batch in iterator:
+        tokens = batch["tokens"].to(device)
+        batch_labels = batch["labels"].to(device)
         logits = model(tokens)
         loss = loss_fn(logits, batch_labels)
         if optimizer is not None:
@@ -50,6 +66,7 @@ def run_epoch(model: nn.Module, dataloader: DataLoader, optimizer=None) -> tuple
         preds.extend(logits.argmax(dim=-1).tolist())
         labels.extend(batch_labels.tolist())
         metadata.extend(batch["metadata"])
+        iterator.set_postfix(loss=f"{loss.item():.4f}")
 
     average_loss = sum(losses) / len(losses) if losses else 0.0
     return average_loss, preds, labels, metadata
@@ -60,44 +77,64 @@ def run_experiment(
     dataset_dir: str,
     batch_size: int = 8,
     epochs: int = 1,
+    device: str = "cpu",
     report_path: str | None = None,
 ) -> dict[str, object]:
     train_rows = load_jsonl_rows(dataset_dir, "train")
     valid_rows = load_jsonl_rows(dataset_dir, "valid")
+    metadata = load_dataset_metadata(dataset_dir)
     vocab = build_vocab_from_rows(train_rows)
+    label_to_id = metadata.get("label_to_id") or build_label_mapping(train_rows + valid_rows)
+    num_classes = len(label_to_id)
+    resolved_device = resolve_device(device)
 
-    train_dataset = ExperimentDataset(train_rows, vocab=vocab, max_length=40)
-    valid_dataset = ExperimentDataset(valid_rows, vocab=vocab, max_length=40)
+    train_dataset = ExperimentDataset(train_rows, vocab=vocab, max_length=40, label_to_id=label_to_id)
+    valid_dataset = ExperimentDataset(valid_rows, vocab=vocab, max_length=40, label_to_id=label_to_id)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_batch)
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_batch)
 
-    model = build_model(model_type=model_type, vocab_size=len(vocab), num_classes=8)
+    model = build_model(model_type=model_type, vocab_size=len(vocab), num_classes=num_classes)
+    model.to(resolved_device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     train_loss = 0.0
-    for _ in range(epochs):
-        train_loss, _, _, _ = run_epoch(model, train_loader, optimizer=optimizer)
+    for epoch_index in range(epochs):
+        train_loss, _, _, _ = run_epoch(
+            model,
+            train_loader,
+            device=resolved_device,
+            optimizer=optimizer,
+            description=f"train[{epoch_index + 1}/{epochs}]",
+        )
 
-    valid_loss, preds, labels, metadata = run_epoch(model, valid_loader, optimizer=None)
+    valid_loss, preds, labels, metadata_rows = run_epoch(
+        model,
+        valid_loader,
+        device=resolved_device,
+        optimizer=None,
+        description="valid",
+    )
     metrics = {
         "train_loss": train_loss,
         "valid_loss": valid_loss,
         "valid_accuracy": compute_accuracy(preds, labels),
-        "valid_macro_f1": compute_macro_f1(preds, labels, num_classes=8),
+        "valid_macro_f1": compute_macro_f1(preds, labels, num_classes=num_classes),
+        "device": resolved_device,
+        "num_classes": num_classes,
         "late_resolution": summarize_subset(
             preds,
             labels,
-            metadata,
+            metadata_rows,
             predicate=lambda row: int(row["reversal_position"]) >= 12,
-            num_classes=8,
+            num_classes=num_classes,
         ),
         "high_distractor": summarize_subset(
             preds,
             labels,
-            metadata,
+            metadata_rows,
             predicate=lambda row: float(row["distractor_strength"]) >= 0.7,
-            num_classes=8,
+            num_classes=num_classes,
         ),
     }
 
@@ -113,11 +150,23 @@ def run_debug_experiment(output_dir: str | Path) -> dict[str, object]:
     output_path = Path(output_dir)
     dataset_dir = output_path / "debug_dataset"
     seed_sentences = [f"Seed sentence {idx} works well." for idx in range(32)]
-    splits = build_splits(seed=7, train_size=16, valid_size=8, test_size=8, seed_sentences=seed_sentences)
-    export_splits(splits, str(dataset_dir))
+    splits = build_splits(
+        seed=7,
+        train_size=16,
+        valid_size=8,
+        test_size=8,
+        seed_sentences=seed_sentences,
+    )
+    label_to_id = build_label_mapping(splits["train"] + splits["valid"])
+    export_splits(
+        splits,
+        str(dataset_dir),
+        metadata={"dataset_source": "semantic_cloud", "label_to_id": label_to_id},
+    )
     return run_experiment(
         model_type="transformer",
         dataset_dir=str(dataset_dir),
         batch_size=8,
         epochs=1,
+        device="cpu",
     )
