@@ -46,3 +46,27 @@ def test_cfrm_philosophy_classifier_can_reduce_loss():
     assert final_loss is not None
     assert first_loss is not None
     assert final_loss < first_loss
+
+
+def test_cfrm_philosophy_sparse_schedule_reports_fewer_reconfigurations():
+    dense_model = CFRMPhilosophyClassifier(
+        vocab_size=100,
+        num_classes=3,
+        num_clouds=4,
+        sparse_reconfiguration=False,
+    )
+    sparse_model = CFRMPhilosophyClassifier(
+        vocab_size=100,
+        num_classes=3,
+        num_clouds=4,
+        sparse_reconfiguration=True,
+        reconfiguration_interval=4,
+        novelty_threshold=0.6,
+    )
+    tokens = torch.randint(0, 100, (2, 16))
+
+    dense_output = dense_model(tokens, return_state=True)
+    sparse_output = sparse_model(tokens, return_state=True)
+
+    assert sparse_output["logits"].shape == (2, 3)
+    assert sparse_output["reconfiguration_count"] <= dense_output["reconfiguration_count"]

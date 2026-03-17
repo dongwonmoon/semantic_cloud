@@ -138,3 +138,16 @@ def test_train_experiment_parse_args_accepts_gru_model_type():
     )
 
     assert args.model_type == "gru"
+
+
+def test_train_experiment_parse_args_accepts_fast_philosophy_model_type():
+    args = parse_args(
+        [
+            "--model-type",
+            "cfrm_philosophy_fast",
+            "--dataset-dir",
+            "artifacts/datasets/dynasent_v1",
+        ]
+    )
+
+    assert args.model_type == "cfrm_philosophy_fast"

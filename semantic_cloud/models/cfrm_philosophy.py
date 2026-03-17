@@ -11,11 +11,17 @@ class CFRMPhilosophyClassifier(nn.Module):
         num_clouds: int,
         hidden_dim: int = 128,
         pad_idx: int = 0,
+        sparse_reconfiguration: bool = False,
+        reconfiguration_interval: int = 1,
+        novelty_threshold: float = 0.0,
     ) -> None:
         super().__init__()
         self.num_clouds = num_clouds
         self.hidden_dim = hidden_dim
         self.pad_idx = pad_idx
+        self.sparse_reconfiguration = sparse_reconfiguration
+        self.reconfiguration_interval = max(1, reconfiguration_interval)
+        self.novelty_threshold = novelty_threshold
 
         self.embedding = nn.Embedding(vocab_size, hidden_dim, padding_idx=pad_idx)
         self.token_norm = nn.LayerNorm(hidden_dim)
@@ -77,6 +83,7 @@ class CFRMPhilosophyClassifier(nn.Module):
         spreads = torch.ones(batch_size, self.num_clouds, device=device)
         masses = torch.zeros(batch_size, self.num_clouds, device=device)
         novelty_history = []
+        reconfiguration_mask = []
 
         for t in range(seq_len):
             valid = mask[:, t : t + 1]
@@ -107,15 +114,23 @@ class CFRMPhilosophyClassifier(nn.Module):
             spreads = spreads + step_strength * (candidate_spreads - spreads)
             masses = masses + step_strength * mass_delta
 
-            attractor = self.attractor_proj(ctrl).unsqueeze(1)
-            centers = centers + 0.10 * novelty.unsqueeze(-1) * (attractor - centers)
+            should_reconfigure = True
+            if self.sparse_reconfiguration:
+                interval_hit = (t % self.reconfiguration_interval) == 0
+                novelty_hit = bool((novelty.max().item()) >= self.novelty_threshold)
+                should_reconfigure = interval_hit and novelty_hit
+            reconfiguration_mask.append(float(should_reconfigure))
 
-            mixed_centers, mixed_spreads, mixed_masses = self.cloud_interaction(
-                centers, spreads, masses
-            )
-            centers = (1.0 - relax.unsqueeze(-1)) * centers + relax.unsqueeze(-1) * mixed_centers
-            spreads = (1.0 - relax) * spreads + relax * mixed_spreads
-            masses = (1.0 - relax) * masses + relax * mixed_masses
+            if should_reconfigure:
+                attractor = self.attractor_proj(ctrl).unsqueeze(1)
+                centers = centers + 0.10 * novelty.unsqueeze(-1) * (attractor - centers)
+
+                mixed_centers, mixed_spreads, mixed_masses = self.cloud_interaction(
+                    centers, spreads, masses
+                )
+                centers = (1.0 - relax.unsqueeze(-1)) * centers + relax.unsqueeze(-1) * mixed_centers
+                spreads = (1.0 - relax) * spreads + relax * mixed_spreads
+                masses = (1.0 - relax) * masses + relax * mixed_masses
 
             precision = 1.0 / (spreads + 1e-4)
             condense_alpha = torch.softmax(masses + torch.log(precision + 1e-4), dim=-1)
@@ -148,4 +163,6 @@ class CFRMPhilosophyClassifier(nn.Module):
             "energy": energy,
             "entropy": entropy,
             "novelty": torch.stack(novelty_history, dim=1),
+            "reconfiguration_count": int(sum(reconfiguration_mask)),
+            "reconfiguration_mask": reconfiguration_mask,
         }
