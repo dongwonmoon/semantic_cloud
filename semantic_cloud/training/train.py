@@ -12,6 +12,7 @@ from semantic_cloud.data.build_dataset import build_dataset_source, build_splits
 from semantic_cloud.data.challenge_sets import load_challenge_rows
 from semantic_cloud.models.cfrm_classifier import CFRMClassifier
 from semantic_cloud.models.cfrm_philosophy import CFRMPhilosophyClassifier
+from semantic_cloud.models.gru_baseline import GRUBaselineClassifier
 from semantic_cloud.models.transformer_baseline import TinyTransformerClassifier
 from semantic_cloud.training.datasets import (
     ExperimentDataset,
@@ -32,6 +33,8 @@ from semantic_cloud.training.metrics import (
 def build_model(model_type: str, vocab_size: int, num_classes: int) -> nn.Module:
     if model_type == "transformer":
         return TinyTransformerClassifier(vocab_size=vocab_size, num_classes=num_classes)
+    if model_type == "gru":
+        return GRUBaselineClassifier(vocab_size=vocab_size, num_classes=num_classes)
     if model_type == "cfrm":
         return CFRMClassifier(vocab_size=vocab_size, num_classes=num_classes, num_clouds=6)
     if model_type == "cfrm_philosophy":

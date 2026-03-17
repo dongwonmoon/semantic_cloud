@@ -125,3 +125,16 @@ def test_train_experiment_parse_args_accepts_hardening_options():
     assert args.evaluate_test is True
     assert args.challenge_dir.endswith("meaning_reinterpretation_v1.jsonl")
     assert args.state_summary_path.endswith("state_summary.json")
+
+
+def test_train_experiment_parse_args_accepts_gru_model_type():
+    args = parse_args(
+        [
+            "--model-type",
+            "gru",
+            "--dataset-dir",
+            "artifacts/datasets/dynasent_v1",
+        ]
+    )
+
+    assert args.model_type == "gru"
