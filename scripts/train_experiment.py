@@ -10,7 +10,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model-type",
-        choices=("transformer", "gru", "cfrm", "cfrm_philosophy", "cfrm_philosophy_fast"),
+        choices=(
+            "transformer",
+            "gru",
+            "cfrm",
+            "cfrm_philosophy",
+            "cfrm_philosophy_fast",
+            "cfrm_philosophy_balanced",
+            "cfrm_philosophy_topk",
+        ),
         required=True,
     )
     parser.add_argument("--dataset-dir", required=True)

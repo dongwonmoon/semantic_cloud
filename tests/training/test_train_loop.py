@@ -151,3 +151,29 @@ def test_train_experiment_parse_args_accepts_fast_philosophy_model_type():
     )
 
     assert args.model_type == "cfrm_philosophy_fast"
+
+
+def test_train_experiment_parse_args_accepts_balanced_philosophy_model_type():
+    args = parse_args(
+        [
+            "--model-type",
+            "cfrm_philosophy_balanced",
+            "--dataset-dir",
+            "artifacts/datasets/dynasent_v1",
+        ]
+    )
+
+    assert args.model_type == "cfrm_philosophy_balanced"
+
+
+def test_train_experiment_parse_args_accepts_topk_philosophy_model_type():
+    args = parse_args(
+        [
+            "--model-type",
+            "cfrm_philosophy_topk",
+            "--dataset-dir",
+            "artifacts/datasets/dynasent_v1",
+        ]
+    )
+
+    assert args.model_type == "cfrm_philosophy_topk"
