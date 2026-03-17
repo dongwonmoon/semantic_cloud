@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 
 from semantic_cloud.data.build_dataset import build_dataset_source, build_splits, export_splits
 from semantic_cloud.models.cfrm_classifier import CFRMClassifier
+from semantic_cloud.models.cfrm_philosophy import CFRMPhilosophyClassifier
 from semantic_cloud.models.transformer_baseline import TinyTransformerClassifier
 from semantic_cloud.training.datasets import (
     ExperimentDataset,
@@ -27,6 +28,8 @@ def build_model(model_type: str, vocab_size: int, num_classes: int) -> nn.Module
         return TinyTransformerClassifier(vocab_size=vocab_size, num_classes=num_classes)
     if model_type == "cfrm":
         return CFRMClassifier(vocab_size=vocab_size, num_classes=num_classes, num_clouds=6)
+    if model_type == "cfrm_philosophy":
+        return CFRMPhilosophyClassifier(vocab_size=vocab_size, num_classes=num_classes, num_clouds=6)
     raise ValueError(f"Unsupported model_type: {model_type}")
 
 
@@ -72,6 +75,43 @@ def run_epoch(
     return average_loss, preds, labels, metadata
 
 
+def dump_validation_state(
+    model: nn.Module,
+    dataset: ExperimentDataset,
+    device: str,
+    output_path: str,
+    sample_count: int = 8,
+) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    limit = min(sample_count, len(dataset))
+    for index in range(limit):
+        item = dataset[index]
+        tokens = item["tokens"].unsqueeze(0).to(device)
+        metadata = item["metadata"]
+        if hasattr(model, "forward"):
+            try:
+                output = model(tokens, return_state=True)
+            except TypeError:
+                output = {"logits": model(tokens)}
+        else:
+            output = {"logits": model(tokens)}
+
+        row = {
+            "text": metadata["text"],
+            "label": metadata["label"],
+            "predicted_label_id": int(output["logits"].argmax(dim=-1).item()),
+        }
+        for key in ("alpha", "core", "entropy", "novelty", "uncertainty", "diversity", "energy"):
+            if key in output:
+                row[key] = output[key].detach().cpu().tolist()
+        rows.append(row)
+
+    path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+
+
 def run_experiment(
     model_type: str,
     dataset_dir: str,
@@ -79,6 +119,7 @@ def run_experiment(
     epochs: int = 1,
     device: str = "cpu",
     report_path: str | None = None,
+    state_dump_path: str | None = None,
 ) -> dict[str, object]:
     train_rows = load_jsonl_rows(dataset_dir, "train")
     valid_rows = load_jsonl_rows(dataset_dir, "valid")
@@ -142,6 +183,14 @@ def run_experiment(
         path = Path(report_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+    if state_dump_path is not None:
+        dump_validation_state(
+            model=model,
+            dataset=valid_dataset,
+            device=resolved_device,
+            output_path=state_dump_path,
+        )
 
     return metrics
 
