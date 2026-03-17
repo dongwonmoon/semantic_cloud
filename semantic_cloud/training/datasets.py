@@ -9,23 +9,23 @@ from torch.utils.data import Dataset
 from semantic_cloud.tokenization import BasicTokenizer, build_vocab, encode
 
 
-LABEL_TO_ID = {
-    "direct_positive": 0,
-    "direct_negative": 1,
-    "qualified_positive": 2,
-    "qualified_negative": 3,
-    "hidden_positive": 4,
-    "hidden_negative": 5,
-    "warning_dominant": 6,
-    "uncertainty_dominant": 7,
-}
+def build_label_mapping(rows: list[dict[str, object]]) -> dict[str, int]:
+    labels = sorted({str(row["label"]) for row in rows})
+    return {label: index for index, label in enumerate(labels)}
 
 
 class ExperimentDataset(Dataset):
-    def __init__(self, rows: list[dict[str, object]], vocab: dict[str, int], max_length: int):
+    def __init__(
+        self,
+        rows: list[dict[str, object]],
+        vocab: dict[str, int],
+        max_length: int,
+        label_to_id: dict[str, int],
+    ):
         self.rows = rows
         self.vocab = vocab
         self.max_length = max_length
+        self.label_to_id = label_to_id
         self.tokenizer = BasicTokenizer()
 
     def __len__(self) -> int:
@@ -37,7 +37,7 @@ class ExperimentDataset(Dataset):
         encoded = encode(tokens, self.vocab, self.max_length)
         return {
             "tokens": torch.tensor(encoded, dtype=torch.long),
-            "label": torch.tensor(LABEL_TO_ID[str(row["label"])], dtype=torch.long),
+            "label": torch.tensor(self.label_to_id[str(row["label"])], dtype=torch.long),
             "metadata": row,
         }
 
@@ -57,6 +57,13 @@ def load_jsonl_rows(dataset_dir: str, split: str) -> list[dict[str, object]]:
         for line in handle:
             rows.append(json.loads(line))
     return rows
+
+
+def load_dataset_metadata(dataset_dir: str) -> dict[str, object]:
+    path = Path(dataset_dir) / "metadata.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def build_vocab_from_rows(rows: list[dict[str, object]], vocab_size: int = 8000) -> dict[str, int]:

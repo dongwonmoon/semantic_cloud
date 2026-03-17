@@ -12,7 +12,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-dir", required=True)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     parser.add_argument("--report-path")
     return parser.parse_args()
 
@@ -24,6 +24,7 @@ def main() -> None:
         dataset_dir=args.dataset_dir,
         batch_size=args.batch_size,
         epochs=args.epochs,
+        device=args.device,
         report_path=args.report_path,
     )
     print(json.dumps(metrics, indent=2))
