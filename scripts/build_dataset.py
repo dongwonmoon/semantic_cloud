@@ -11,7 +11,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset-source",
-        choices=("semantic_cloud", "dynasent"),
+        choices=("semantic_cloud", "dynasent", "ag_news"),
         default="semantic_cloud",
     )
     parser.add_argument("--train-size", type=int, default=12000)

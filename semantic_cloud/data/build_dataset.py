@@ -7,7 +7,7 @@ from random import Random
 from tqdm.auto import tqdm
 
 from semantic_cloud.data.quality import dedupe_rows, keep_length_window
-from semantic_cloud.data.public_datasets import load_dynasent_splits
+from semantic_cloud.data.public_datasets import load_ag_news_splits, load_dynasent_splits
 from semantic_cloud.data.rewrite_templates import rewrite_sentence
 from semantic_cloud.data.seed_loader import load_sst2_sentences
 
@@ -73,6 +73,8 @@ def build_dataset_source(
         )
     if dataset_source == "dynasent":
         return load_dynasent_splits()
+    if dataset_source == "ag_news":
+        return load_ag_news_splits()
     raise ValueError(f"Unsupported dataset_source: {dataset_source}")
 
 

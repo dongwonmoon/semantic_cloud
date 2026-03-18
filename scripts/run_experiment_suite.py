@@ -13,6 +13,7 @@ def parse_args() -> argparse.Namespace:
         choices=(
             "transformer",
             "gru",
+            "sparse_field",
             "cfrm",
             "cfrm_philosophy",
             "cfrm_philosophy_fast",
