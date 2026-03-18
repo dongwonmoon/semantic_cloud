@@ -13,6 +13,7 @@ from semantic_cloud.data.challenge_sets import load_challenge_rows
 from semantic_cloud.models.cfrm_classifier import CFRMClassifier
 from semantic_cloud.models.cfrm_philosophy import CFRMPhilosophyClassifier
 from semantic_cloud.models.gru_baseline import GRUBaselineClassifier
+from semantic_cloud.models.sparse_field_classifier import HierarchicalSparseFieldClassifier
 from semantic_cloud.models.transformer_baseline import TinyTransformerClassifier
 from semantic_cloud.training.datasets import (
     ExperimentDataset,
@@ -35,6 +36,8 @@ def build_model(model_type: str, vocab_size: int, num_classes: int) -> nn.Module
         return TinyTransformerClassifier(vocab_size=vocab_size, num_classes=num_classes)
     if model_type == "gru":
         return GRUBaselineClassifier(vocab_size=vocab_size, num_classes=num_classes)
+    if model_type == "sparse_field":
+        return HierarchicalSparseFieldClassifier(vocab_size=vocab_size, num_classes=num_classes)
     if model_type == "cfrm":
         return CFRMClassifier(vocab_size=vocab_size, num_classes=num_classes, num_clouds=6)
     if model_type == "cfrm_philosophy":

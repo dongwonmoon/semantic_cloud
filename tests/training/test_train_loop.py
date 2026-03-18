@@ -140,6 +140,19 @@ def test_train_experiment_parse_args_accepts_gru_model_type():
     assert args.model_type == "gru"
 
 
+def test_train_experiment_parse_args_accepts_sparse_field_model_type():
+    args = parse_args(
+        [
+            "--model-type",
+            "sparse_field",
+            "--dataset-dir",
+            "artifacts/datasets/ag_news_v1",
+        ]
+    )
+
+    assert args.model_type == "sparse_field"
+
+
 def test_train_experiment_parse_args_accepts_fast_philosophy_model_type():
     args = parse_args(
         [

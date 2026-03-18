@@ -1,4 +1,4 @@
-from semantic_cloud.data.public_datasets import normalize_dynasent_rows
+from semantic_cloud.data.public_datasets import normalize_ag_news_rows, normalize_dynasent_rows
 
 
 def test_normalize_dynasent_rows_keeps_only_supported_labels():
@@ -14,3 +14,16 @@ def test_normalize_dynasent_rows_keeps_only_supported_labels():
     assert [row["label"] for row in result] == ["positive", "neutral"]
     assert all(row["seed_source"] == "dynasent" for row in result)
     assert all("text" in row for row in result)
+
+
+def test_normalize_ag_news_rows_maps_labels():
+    rows = [
+        {"text": "Stocks rallied on strong earnings.", "label": 2},
+        {"text": "The team won after extra time.", "label": 1},
+        {"text": "", "label": 0},
+    ]
+
+    result = normalize_ag_news_rows(rows, split_name="train", source_name="ag_news")
+
+    assert [row["label"] for row in result] == ["business", "sports"]
+    assert all(row["seed_source"] == "ag_news" for row in result)

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 import json
 import tempfile
 import urllib.request
@@ -10,6 +8,12 @@ from pathlib import Path
 
 
 SUPPORTED_DYNASENT_LABELS = {"positive", "negative", "neutral"}
+AG_NEWS_LABELS = {
+    0: "world",
+    1: "sports",
+    2: "business",
+    3: "sci_tech",
+}
 
 
 def normalize_dynasent_rows(
@@ -76,4 +80,62 @@ def load_dynasent_splits() -> dict[str, list[dict[str, object]]]:
             source_name="dynasent",
         )
         for split_name, member_name in DYNASENT_FILES.items()
+    }
+
+
+def normalize_ag_news_rows(
+    rows: list[dict[str, object]],
+    split_name: str,
+    source_name: str,
+) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
+    for index, row in enumerate(rows):
+        text = str(row.get("text", "")).strip()
+        raw_label = row.get("label")
+        label = AG_NEWS_LABELS.get(int(raw_label)) if raw_label is not None else None
+        if not text or label is None:
+            continue
+        normalized.append(
+            {
+                "text": text,
+                "label": label,
+                "seed_source": source_name,
+                "template_id": f"{source_name}_{split_name}",
+                "early_signal": "public",
+                "final_signal": "public",
+                "reversal_position": 0,
+                "distractor_strength": 0.0,
+                "length_tokens": len(text.split()),
+                "source_id": row.get("text_id", f"{split_name}_{index}"),
+            }
+        )
+    return normalized
+
+
+def load_ag_news_splits() -> dict[str, list[dict[str, object]]]:
+    try:
+        from datasets import load_dataset
+    except ImportError as exc:
+        raise RuntimeError(
+            "AG News loading requires the `datasets` package. Install it with `pip install datasets`."
+        ) from exc
+
+    dataset = load_dataset("ag_news")
+    train_valid = dataset["train"].train_test_split(test_size=0.1, seed=7)
+    return {
+        "train": normalize_ag_news_rows(
+            list(train_valid["train"]),
+            split_name="train",
+            source_name="ag_news",
+        ),
+        "valid": normalize_ag_news_rows(
+            list(train_valid["test"]),
+            split_name="valid",
+            source_name="ag_news",
+        ),
+        "test": normalize_ag_news_rows(
+            list(dataset["test"]),
+            split_name="test",
+            source_name="ag_news",
+        ),
     }
